@@ -1,0 +1,39 @@
+# Source files
+src/
+tsconfig.json
+tsconfig.build.json
+
+# Tests
+**/__tests__/
+**/*.test.ts
+**/*.test.js
+**/*.test.d.ts
+**/*.test.d.ts.map
+**/*.test.js.map
+dist/__tests__/
+vitest.config.ts
+coverage/
+
+# Config files
+eslint.config.js
+.eslintrc*
+
+# Development
+node_modules/
+.vscode/
+.idea/
+*.log
+.DS_Store
+
+# CI/CD
+.github/
+
+# Documentation (keep README.md)
+docs/
+*.md
+!README.md
+
+# Misc
+.env
+.env.*
+*.tsbuildinfo

@@ -1,0 +1,60 @@
+{
+  "name": "keyparty-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Node.js TypeScript SDK for KeyParty credit management",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "lint": "eslint src --ext .ts --fix",
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "keyparty",
+    "credits",
+    "sdk",
+    "typescript",
+    "node",
+    "api-client",
+    "rest-api"
+  ],
+  "author": "Arewe.ai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/areweai/keyparty-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/areweai/keyparty-sdk/issues"
+  },
+  "homepage": "https://github.com/areweai/keyparty-sdk#readme",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.0.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
