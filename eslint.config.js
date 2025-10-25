@@ -10,6 +10,7 @@ export default [
   js.configs.recommended,
   {
     files: ['**/*.ts'],
+    ignores: ['**/*.test.ts', '**/__tests__/**'],
     plugins: {
       '@typescript-eslint': typescriptEslint,
     },
@@ -39,8 +40,19 @@ export default [
     },
   },
   {
-    // Test files configuration
-    files: ['**/*.test.ts'],
+    // Test files configuration - disable project references to avoid tsconfig conflicts
+    files: ['**/*.test.ts', '**/__tests__/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        // No project reference for test files since they're excluded from tsconfig.json
+      },
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off', // Allow any in tests for mocking
     },
