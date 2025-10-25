@@ -30,16 +30,14 @@
     "keyparty",
     "credits",
     "sdk",
-    "typescript",
-    "node",
-    "api-client",
-    "rest-api"
+    "saas",
+    "api"
   ],
   "author": "Arewe.ai",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/areweai/keyparty-sdk.git"
+    "url": "git+https://github.com/areweai/keyparty-sdk.git"
   },
   "bugs": {
     "url": "https://github.com/areweai/keyparty-sdk/issues"
