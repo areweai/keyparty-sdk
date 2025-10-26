@@ -87,7 +87,7 @@ export class KeyPartyClient {
    * @returns Promise resolving to API response data
    * @throws ValidationError, AuthenticationError, UserNotFoundError, InsufficientCreditsError, NetworkError
    */
-  private async request<T extends JsonValue = JsonObject>(
+  private async request<T = any>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: JsonObject
@@ -127,8 +127,8 @@ export class KeyPartyClient {
 
         const data = await response.json() as KeyPartyApiResponse<T>;
 
-        // Handle API-level errors (errors returned in JSON response with success: false)
-        if (!data.success) {
+        // Check for wrapped error response (mixed response format)
+        if (this.isErrorResponse(data)) {
           if (data.error?.includes('User not found')) {
             throw new UserNotFoundError(String(body?.userId || 'unknown'));
           }
@@ -141,7 +141,8 @@ export class KeyPartyClient {
           throw new Error(data.error);
         }
 
-        return data.data as T;
+        // Success response is flat - return directly (no unwrapping)
+        return data as T;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
@@ -167,6 +168,23 @@ export class KeyPartyClient {
 
     // If we've exhausted all retry attempts, throw NetworkError with original error
     throw new NetworkError('Max retry attempts exceeded', { originalError: lastError });
+  }
+
+  /**
+   * Type guard to detect wrapped error responses
+   *
+   * The API uses mixed response format:
+   * - Error responses: {success: false, error: string, timestamp: number}
+   * - Success responses: flat data (no wrapper)
+   *
+   * @param data - Response data to check
+   * @returns True if data is an error response
+   */
+  private isErrorResponse(data: any): data is { success: false; error: string; timestamp: number } {
+    return typeof data === 'object' &&
+           data !== null &&
+           'success' in data &&
+           data.success === false;
   }
 
   /**
@@ -208,144 +226,115 @@ export class KeyPartyClient {
   /**
    * Get current credit balance for a user
    *
+   * Returns flat response from API with server-authoritative timestamp.
+   *
    * @param userId - User identifier
-   * @returns Current credit information
+   * @returns Current credit information with server timestamp
    *
    * @example
    * ```typescript
    * const credits = await client.getCredits('user_123');
    * console.log(`Balance: ${credits.credits}`);
+   * console.log(`Server time: ${credits.timestamp}`);
    * ```
    */
   async getCredits(userId: string): Promise<CreditResponse> {
     this.validateUserId(userId);
 
-    const response = await this.request<{ credits: number }>('POST', '/api/credits/get', {
+    // API returns flat {userId, credits, timestamp} - no wrapper
+    return this.request<CreditResponse>('POST', '/api/credits/get', {
       userId,
     });
-
-    return {
-      userId,
-      credits: response.credits,
-      timestamp: new Date().toISOString(),
-    };
   }
 
   /**
    * Add credits to a user's balance
    *
+   * Single API call returns complete OperationResult with server-authoritative data.
+   * Performance: 66% improvement over old 3-call pattern.
+   *
    * @param userId - User identifier
    * @param amount - Number of credits to add (must be positive integer)
    * @param reason - Optional reason for adding credits
-   * @returns Operation result with previous and new balances
+   * @returns Complete operation result from server (previousCredits, newCredits, timestamp)
    *
    * @example
    * ```typescript
    * const result = await client.addCredits('user_123', 10, 'Signup bonus');
-   * console.log(`New balance: ${result.newCredits}`);
+   * console.log(`Previous: ${result.previousCredits}, New: ${result.newCredits}`);
+   * console.log(`Server timestamp: ${result.timestamp}`);
    * ```
    */
   async addCredits(userId: string, amount: number, reason?: string): Promise<OperationResult> {
     this.validateUserId(userId);
     this.validateAmount(amount);
 
-    const previousBalance = await this.getCredits(userId);
-
-    await this.request('POST', '/api/credits/add', {
+    // Single API call returns complete OperationResult with all data
+    return this.request<OperationResult>('POST', '/api/credits/add', {
       userId,
       amount,
       reason: reason || 'Credit addition',
     });
-
-    const newBalance = await this.getCredits(userId);
-
-    return {
-      success: true,
-      previousCredits: previousBalance.credits,
-      newCredits: newBalance.credits,
-      operation: 'add',
-      amount,
-      timestamp: new Date().toISOString(),
-      reason,
-    };
   }
 
   /**
    * Deduct credits from a user's balance
    *
+   * Single API call returns complete OperationResult with server-authoritative data.
+   * Performance: 66% improvement over old 3-call pattern.
+   *
    * @param userId - User identifier
    * @param amount - Number of credits to deduct (must be positive integer)
    * @param reason - Optional reason for deducting credits
-   * @returns Operation result with previous and new balances
+   * @returns Complete operation result from server (previousCredits, newCredits, timestamp)
    *
    * @example
    * ```typescript
    * const result = await client.deductCredits('user_123', 5, 'API usage');
    * console.log(`Remaining: ${result.newCredits}`);
+   * console.log(`Server timestamp: ${result.timestamp}`);
    * ```
    */
   async deductCredits(userId: string, amount: number, reason?: string): Promise<OperationResult> {
     this.validateUserId(userId);
     this.validateAmount(amount);
 
-    const previousBalance = await this.getCredits(userId);
-
-    await this.request('POST', '/api/credits/deduct', {
+    // Single API call returns complete OperationResult with all data
+    return this.request<OperationResult>('POST', '/api/credits/deduct', {
       userId,
       amount,
       reason: reason || 'Credit deduction',
     });
-
-    const newBalance = await this.getCredits(userId);
-
-    return {
-      success: true,
-      previousCredits: previousBalance.credits,
-      newCredits: newBalance.credits,
-      operation: 'deduct',
-      amount,
-      timestamp: new Date().toISOString(),
-      reason,
-    };
   }
 
   /**
    * Set user's credit balance to a specific value
    *
+   * Single API call returns complete OperationResult with server-authoritative data.
+   * Performance: 66% improvement over old 3-call pattern.
+   *
    * @param userId - User identifier
    * @param amount - New credit balance (can be zero, must be non-negative)
    * @param reason - Optional reason for setting credits
-   * @returns Operation result with previous and new balances
+   * @returns Complete operation result from server (previousCredits, newCredits, timestamp)
    *
    * @example
    * ```typescript
    * const result = await client.setCredits('user_123', 100, 'Account reset');
-   * console.log(`Set to: ${result.newCredits}`);
+   * console.log(`Previous: ${result.previousCredits}, Set to: ${result.newCredits}`);
+   * console.log(`Server timestamp: ${result.timestamp}`);
    * ```
    */
   async setCredits(userId: string, amount: number, reason?: string): Promise<OperationResult> {
     this.validateUserId(userId);
     this.validateAmount(amount, true); // Allow zero for set operation
 
-    const previousBalance = await this.getCredits(userId);
-
-    await this.request('POST', '/api/credits/set', {
+    // Single API call returns complete OperationResult with all data
+    return this.request<OperationResult>('POST', '/api/credits/set', {
       userId,
       amount,
       reason: reason || 'Credit balance update',
     });
-
-    const newBalance = await this.getCredits(userId);
-
-    return {
-      success: true,
-      previousCredits: previousBalance.credits,
-      newCredits: newBalance.credits,
-      operation: 'set',
-      amount,
-      timestamp: new Date().toISOString(),
-      reason,
-    };
   }
 
   /**

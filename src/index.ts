@@ -15,7 +15,6 @@ export type {
   OperationResult,
   BatchOperationResult,
   KeyPartyApiError,
-  KeyPartyApiSuccess,
   KeyPartyApiResponse,
 } from './types.js';
 

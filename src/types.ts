@@ -119,20 +119,13 @@ export interface KeyPartyApiError {
 }
 
 /**
- * API success response structure
- */
-export interface KeyPartyApiSuccess<T extends JsonValue = JsonObject> {
-  /** Success flag */
-  success: true;
-  /** Response data (must be JSON-serializable) */
-  data?: T;
-  /** Optional message */
-  message?: string;
-  /** Timestamp */
-  timestamp: number;
-}
-
-/**
  * Union type for API responses
+ *
+ * The API uses mixed response format:
+ * - Error responses: wrapped with {success: false, error, timestamp}
+ * - Success responses: flat data (no wrapper)
+ *
+ * This allows the API to return complete data directly for success cases
+ * while maintaining structured error responses.
  */
-export type KeyPartyApiResponse<T extends JsonValue = JsonObject> = KeyPartyApiSuccess<T> | KeyPartyApiError;
+export type KeyPartyApiResponse<T = any> = T | KeyPartyApiError;
