@@ -53,14 +53,19 @@ describe('KeyPartyClient', () => {
     });
 
     it('should get credits for valid user', async () => {
-      mockRequest.mockResolvedValue({ credits: 100 });
+      // API now returns flat response with userId, credits, timestamp
+      mockRequest.mockResolvedValue({
+        userId: 'user_123',
+        credits: 100,
+        timestamp: '2025-10-26T10:00:00.000Z'
+      });
 
       const result = await client.getCredits('user_123');
 
       expect(mockRequest).toHaveBeenCalledWith('POST', '/api/credits/get', { userId: 'user_123' });
       expect(result.userId).toBe('user_123');
       expect(result.credits).toBe(100);
-      expect(result.timestamp).toBeDefined();
+      expect(result.timestamp).toBe('2025-10-26T10:00:00.000Z');
     });
 
     it('should validate userId before making request', async () => {
@@ -84,13 +89,25 @@ describe('KeyPartyClient', () => {
     });
 
     it('should add credits successfully', async () => {
-      mockRequest
-        .mockResolvedValueOnce({ credits: 100 }) // First getCredits call
-        .mockResolvedValueOnce(undefined) // addCredits call
-        .mockResolvedValueOnce({ credits: 110 }); // Second getCredits call
+      // API now returns complete OperationResult with all data in single call
+      mockRequest.mockResolvedValue({
+        success: true,
+        userId: 'user_123',
+        previousCredits: 100,
+        newCredits: 110,
+        operation: 'add' as const,
+        amount: 10,
+        timestamp: '2025-10-26T10:00:00.000Z',
+        reason: 'Bonus'
+      });
 
       const result = await client.addCredits('user_123', 10, 'Bonus');
 
+      expect(mockRequest).toHaveBeenCalledWith('POST', '/api/credits/add', {
+        userId: 'user_123',
+        amount: 10,
+        reason: 'Bonus',
+      });
       expect(result.success).toBe(true);
       expect(result.previousCredits).toBe(100);
       expect(result.newCredits).toBe(110);
@@ -100,14 +117,20 @@ describe('KeyPartyClient', () => {
     });
 
     it('should use default reason when not provided', async () => {
-      mockRequest
-        .mockResolvedValueOnce({ credits: 50 })
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce({ credits: 60 });
+      mockRequest.mockResolvedValue({
+        success: true,
+        userId: 'user_123',
+        previousCredits: 50,
+        newCredits: 60,
+        operation: 'add' as const,
+        amount: 10,
+        timestamp: '2025-10-26T10:00:00.000Z',
+        reason: 'Credit addition'
+      });
 
       await client.addCredits('user_123', 10);
 
-      expect(mockRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/credits/add', {
+      expect(mockRequest).toHaveBeenCalledWith('POST', '/api/credits/add', {
         userId: 'user_123',
         amount: 10,
         reason: 'Credit addition',
@@ -135,13 +158,25 @@ describe('KeyPartyClient', () => {
     });
 
     it('should deduct credits successfully', async () => {
-      mockRequest
-        .mockResolvedValueOnce({ credits: 100 })
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce({ credits: 95 });
+      // API now returns complete OperationResult with all data in single call
+      mockRequest.mockResolvedValue({
+        success: true,
+        userId: 'user_123',
+        previousCredits: 100,
+        newCredits: 95,
+        operation: 'deduct' as const,
+        amount: 5,
+        timestamp: '2025-10-26T10:00:00.000Z',
+        reason: 'Usage'
+      });
 
       const result = await client.deductCredits('user_123', 5, 'Usage');
 
+      expect(mockRequest).toHaveBeenCalledWith('POST', '/api/credits/deduct', {
+        userId: 'user_123',
+        amount: 5,
+        reason: 'Usage',
+      });
       expect(result.success).toBe(true);
       expect(result.previousCredits).toBe(100);
       expect(result.newCredits).toBe(95);
@@ -169,13 +204,25 @@ describe('KeyPartyClient', () => {
     });
 
     it('should set credits to specific value', async () => {
-      mockRequest
-        .mockResolvedValueOnce({ credits: 100 })
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce({ credits: 50 });
+      // API now returns complete OperationResult with all data in single call
+      mockRequest.mockResolvedValue({
+        success: true,
+        userId: 'user_123',
+        previousCredits: 100,
+        newCredits: 50,
+        operation: 'set' as const,
+        amount: 50,
+        timestamp: '2025-10-26T10:00:00.000Z',
+        reason: 'Reset'
+      });
 
       const result = await client.setCredits('user_123', 50, 'Reset');
 
+      expect(mockRequest).toHaveBeenCalledWith('POST', '/api/credits/set', {
+        userId: 'user_123',
+        amount: 50,
+        reason: 'Reset',
+      });
       expect(result.success).toBe(true);
       expect(result.previousCredits).toBe(100);
       expect(result.newCredits).toBe(50);
@@ -184,10 +231,16 @@ describe('KeyPartyClient', () => {
     });
 
     it('should allow setting credits to zero', async () => {
-      mockRequest
-        .mockResolvedValueOnce({ credits: 100 })
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce({ credits: 0 });
+      mockRequest.mockResolvedValue({
+        success: true,
+        userId: 'user_123',
+        previousCredits: 100,
+        newCredits: 0,
+        operation: 'set' as const,
+        amount: 0,
+        timestamp: '2025-10-26T10:00:00.000Z',
+        reason: 'Credit balance update'
+      });
 
       const result = await client.setCredits('user_123', 0);
 
@@ -359,7 +412,7 @@ describe('KeyPartyClient', () => {
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ success: true, data: { credits: 100 } }),
+          json: async () => ({ userId: 'user_123', credits: 100, timestamp: '2025-10-26T10:00:00.000Z' }),
         });
 
       const result = await client.getCredits('user_123');

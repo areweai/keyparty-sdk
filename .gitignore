@@ -8,6 +8,9 @@ dist/
 # Test coverage
 coverage/
 
+# Manual test scripts
+test-refactor.ts
+
 # Logs
 *.log
 npm-debug.log*

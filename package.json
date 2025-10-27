@@ -1,6 +1,7 @@
 {
   "name": "keyparty-sdk",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "Node.js TypeScript SDK for KeyParty credit management",
   "main": "./dist/index.js",
