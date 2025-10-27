@@ -128,4 +128,4 @@ export interface KeyPartyApiError {
  * This allows the API to return complete data directly for success cases
  * while maintaining structured error responses.
  */
-export type KeyPartyApiResponse<T = any> = T | KeyPartyApiError;
+export type KeyPartyApiResponse<T = unknown> = T | KeyPartyApiError;

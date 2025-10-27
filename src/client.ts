@@ -16,7 +16,6 @@ import type {
   BatchOperationResult,
   KeyPartyApiResponse,
   ChildKeyResponse,
-  JsonValue,
   JsonObject,
 } from './types.js';
 import {
@@ -87,7 +86,7 @@ export class KeyPartyClient {
    * @returns Promise resolving to API response data
    * @throws ValidationError, AuthenticationError, UserNotFoundError, InsufficientCreditsError, NetworkError
    */
-  private async request<T = any>(
+  private async request<T = unknown>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: JsonObject
@@ -180,7 +179,7 @@ export class KeyPartyClient {
    * @param data - Response data to check
    * @returns True if data is an error response
    */
-  private isErrorResponse(data: any): data is { success: false; error: string; timestamp: number } {
+  private isErrorResponse(data: unknown): data is { success: false; error: string; timestamp: number } {
     return typeof data === 'object' &&
            data !== null &&
            'success' in data &&
