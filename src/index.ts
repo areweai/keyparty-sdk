@@ -16,6 +16,10 @@ export type {
   BatchOperationResult,
   KeyPartyApiError,
   KeyPartyApiResponse,
+  SubscriptionStatus,
+  Subscription,
+  SubscriptionResponse,
+  SubscriptionStatusResponse,
 } from './types.js';
 
 // Export errors

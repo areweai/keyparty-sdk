@@ -17,6 +17,8 @@ import type {
   KeyPartyApiResponse,
   ChildKeyResponse,
   JsonObject,
+  SubscriptionResponse,
+  SubscriptionStatusResponse,
 } from './types.js';
 import {
   ValidationError,
@@ -508,5 +510,206 @@ export class KeyPartyClient {
       credits: initialCredits,
       ...(metadata && { metadata }),
     });
+  }
+
+  /**
+   * Start a recurring credit subscription
+   *
+   * Creates a subscription that automatically adds credits at regular intervals.
+   * The first allocation happens immediately upon creation.
+   *
+   * @param userId - User ID to create subscription for
+   * @param amount - Credits to add per cycle
+   * @param validityDays - Cycle duration in days (default: 31)
+   * @param metadata - Optional metadata for the subscription
+   * @returns Subscription details including ID and renewal dates
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {ForbiddenError} If child key attempts this operation
+   *
+   * @example
+   * ```typescript
+   * const sub = await client.startSubscription('user_123', 500, 31);
+   * console.log(`Next renewal: ${new Date(sub.subscription.nextRenewalAt)}`);
+   * ```
+   */
+  async startSubscription(
+    userId: string,
+    amount: number,
+    validityDays: number = 31,
+    metadata?: JsonObject
+  ): Promise<SubscriptionResponse> {
+    this.validateUserId(userId);
+    this.validateAmount(amount);
+
+    if (validityDays <= 0 || validityDays > 365) {
+      throw new ValidationError('validityDays must be between 1 and 365');
+    }
+
+    return await this.request('POST', '/api/subscriptions/start', {
+      serviceApiKey: this.serviceKey,
+      amount,
+      validityDays,
+      ...(metadata && { metadata }),
+    });
+  }
+
+  /**
+   * Stop (cancel) a recurring subscription
+   *
+   * Cancels future renewals. Credits remain valid until current cycle ends.
+   *
+   * @param userId - User ID
+   * @param subscriptionId - Subscription ID to cancel
+   * @returns Updated subscription details
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If subscription doesn't exist
+   *
+   * @example
+   * ```typescript
+   * await client.stopSubscription('user_123', 'subscription_id');
+   * ```
+   */
+  async stopSubscription(
+    userId: string,
+    subscriptionId: string
+  ): Promise<SubscriptionResponse> {
+    this.validateUserId(userId);
+
+    if (!subscriptionId || typeof subscriptionId !== 'string') {
+      throw new ValidationError('subscriptionId is required');
+    }
+
+    return await this.request('POST', '/api/subscriptions/stop', {
+      serviceApiKey: this.serviceKey,
+      subscriptionId,
+    });
+  }
+
+  /**
+   * Get subscription status for a user
+   *
+   * Returns all subscriptions (active, canceled, paused) for the specified user.
+   *
+   * @param userId - User ID to query
+   * @returns Array of all subscriptions with status and renewal dates
+   *
+   * @throws {ValidationError} If userId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * const status = await client.getSubscriptionStatus('user_123');
+   * const active = status.subscriptions.filter(s => s.status === 'active');
+   * ```
+   */
+  async getSubscriptionStatus(userId: string): Promise<SubscriptionStatusResponse> {
+    this.validateUserId(userId);
+
+    const params = new URLSearchParams({ serviceApiKey: this.serviceKey });
+    return await this.request('GET', `/api/subscriptions/status?${params.toString()}`);
+  }
+
+  /**
+   * Start subscription for external user (multi-tenant)
+   *
+   * Service owners can create subscriptions for their own users using externalUserId.
+   *
+   * @param externalUserId - Your application's user ID
+   * @param amount - Credits per cycle
+   * @param validityDays - Cycle duration (default: 31)
+   * @param metadata - Optional metadata
+   * @returns Subscription details
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If external user has no child key
+   *
+   * @example
+   * ```typescript
+   * const sub = await client.startExternalUserSubscription('app_user_456', 500, 31);
+   * ```
+   */
+  async startExternalUserSubscription(
+    externalUserId: string,
+    amount: number,
+    validityDays: number = 31,
+    metadata?: JsonObject
+  ): Promise<SubscriptionResponse> {
+    this.validateUserId(externalUserId);
+    this.validateAmount(amount);
+
+    if (validityDays <= 0 || validityDays > 365) {
+      throw new ValidationError('validityDays must be between 1 and 365');
+    }
+
+    return await this.request('POST', '/api/external-user/subscriptions/start', {
+      serviceApiKey: this.serviceKey,
+      externalUserId,
+      amount,
+      validityDays,
+      ...(metadata && { metadata }),
+    });
+  }
+
+  /**
+   * Stop subscription for external user
+   *
+   * @param externalUserId - Your application's user ID
+   * @param subscriptionId - Subscription ID to cancel
+   * @returns Updated subscription details
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * await client.stopExternalUserSubscription('app_user_456', 'sub_id');
+   * ```
+   */
+  async stopExternalUserSubscription(
+    externalUserId: string,
+    subscriptionId: string
+  ): Promise<SubscriptionResponse> {
+    this.validateUserId(externalUserId);
+
+    if (!subscriptionId || typeof subscriptionId !== 'string') {
+      throw new ValidationError('subscriptionId is required');
+    }
+
+    return await this.request('POST', '/api/external-user/subscriptions/stop', {
+      serviceApiKey: this.serviceKey,
+      externalUserId,
+      subscriptionId,
+    });
+  }
+
+  /**
+   * Get subscription status for external user
+   *
+   * @param externalUserId - Your application's user ID
+   * @returns Array of subscriptions for this external user
+   *
+   * @throws {ValidationError} If externalUserId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * const status = await client.getExternalUserSubscriptionStatus('app_user_456');
+   * ```
+   */
+  async getExternalUserSubscriptionStatus(
+    externalUserId: string
+  ): Promise<SubscriptionStatusResponse> {
+    this.validateUserId(externalUserId);
+
+    const params = new URLSearchParams({
+      serviceApiKey: this.serviceKey,
+      externalUserId,
+    });
+    return await this.request('GET', `/api/external-user/subscriptions/status?${params.toString()}`);
   }
 }

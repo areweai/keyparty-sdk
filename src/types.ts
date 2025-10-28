@@ -107,6 +107,61 @@ export interface ChildKeyResponse {
 }
 
 /**
+ * Subscription status types
+ */
+export type SubscriptionStatus = 'active' | 'canceled' | 'paused' | 'expired';
+
+/**
+ * Subscription details
+ */
+export interface Subscription {
+  /** Subscription ID */
+  id: string;
+  /** Credits added per cycle */
+  amount: number;
+  /** Cycle duration in days */
+  validityDays: number;
+  /** Current subscription status */
+  status: SubscriptionStatus;
+  /** Cycle start timestamp (milliseconds) */
+  currentCycleStart: number;
+  /** Cycle end timestamp (milliseconds) */
+  currentCycleEnd: number;
+  /** Next renewal timestamp (milliseconds) */
+  nextRenewalAt: number;
+  /** Total number of renewals completed */
+  renewalCount?: number;
+  /** Creation timestamp (milliseconds) */
+  createdAt?: number;
+}
+
+/**
+ * Response from subscription operations (start/stop)
+ */
+export interface SubscriptionResponse {
+  /** Operation success status */
+  success: boolean;
+  /** Subscription details */
+  subscription: Subscription;
+  /** Operation message */
+  message: string;
+  /** External user ID (for multi-tenant operations) */
+  externalUserId?: string;
+}
+
+/**
+ * Response from subscription status query
+ */
+export interface SubscriptionStatusResponse {
+  /** Operation success status */
+  success: boolean;
+  /** Array of subscriptions */
+  subscriptions: Subscription[];
+  /** External user ID (for multi-tenant operations) */
+  externalUserId?: string;
+}
+
+/**
  * API error response structure
  */
 export interface KeyPartyApiError {
