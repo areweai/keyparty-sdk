@@ -113,21 +113,43 @@ export class KeyPartyClient {
 
         clearTimeout(timeoutId);
 
-        // Handle HTTP-level errors first (before parsing JSON)
-        if (!response.ok) {
-          if (response.status === 401) {
-            throw new AuthenticationError('Invalid service key');
+        // Always try to parse JSON body first (works for both success and error responses)
+        let data: KeyPartyApiResponse<T>;
+        try {
+          data = await response.json() as KeyPartyApiResponse<T>;
+        } catch {
+          // If JSON parsing fails, fall back to HTTP status code handling
+          if (!response.ok) {
+            if (response.status === 401) {
+              throw new AuthenticationError('Invalid service key');
+            }
+            if (response.status === 429) {
+              throw new RateLimitError('Rate limit exceeded');
+            }
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
-          if (response.status === 429) {
-            throw new RateLimitError('Rate limit exceeded');
-          }
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          throw new Error('Invalid response format: expected JSON');
         }
 
-        const data = await response.json() as KeyPartyApiResponse<T>;
-
-        // Check for wrapped error response (mixed response format)
+        // Check for error response (works regardless of HTTP status code)
         if (this.isErrorResponse(data)) {
+          // Check HTTP status codes first for proper error typing
+          if (!response.ok) {
+            if (response.status === 401) {
+              throw new AuthenticationError('Invalid service key');
+            }
+            if (response.status === 429) {
+              throw new RateLimitError('Rate limit exceeded');
+            }
+            if (response.status === 402) {
+              // Payment required - check for insufficient credits
+              if (data.error?.includes('Insufficient credits')) {
+                throw new InsufficientCreditsError(data.error);
+              }
+            }
+          }
+
+          // Check error message patterns for semantic errors
           if (data.error?.includes('User not found')) {
             throw new UserNotFoundError(String(body?.userId || 'unknown'));
           }
