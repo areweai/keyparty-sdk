@@ -41,6 +41,17 @@ export class AuthenticationError extends KeyPartyError {
 }
 
 /**
+ * Forbidden error thrown when the operation is not allowed for the key type
+ * (e.g., child keys attempting to add/set credits)
+ */
+export class ForbiddenError extends KeyPartyError {
+  constructor(message: string = 'Operation forbidden for this key type', details?: unknown) {
+    super(message, 'FORBIDDEN_ERROR', 403, details);
+    this.name = 'ForbiddenError';
+  }
+}
+
+/**
  * Rate limit error thrown when rate limits are exceeded
  */
 export class RateLimitError extends KeyPartyError {

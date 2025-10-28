@@ -23,6 +23,7 @@ export {
   KeyPartyError,
   ValidationError,
   AuthenticationError,
+  ForbiddenError,
   RateLimitError,
   InsufficientCreditsError,
   NetworkError,

@@ -21,6 +21,7 @@ import type {
 import {
   ValidationError,
   AuthenticationError,
+  ForbiddenError,
   NetworkError,
   UserNotFoundError,
   InsufficientCreditsError,
@@ -138,6 +139,9 @@ export class KeyPartyClient {
             if (response.status === 401) {
               throw new AuthenticationError('Invalid service key');
             }
+            if (response.status === 403) {
+              throw new ForbiddenError(data.error || 'Operation forbidden for this key type');
+            }
             if (response.status === 429) {
               throw new RateLimitError('Rate limit exceeded');
             }
@@ -171,6 +175,7 @@ export class KeyPartyClient {
         if (
           error instanceof ValidationError ||
           error instanceof AuthenticationError ||
+          error instanceof ForbiddenError ||
           error instanceof UserNotFoundError ||
           error instanceof InsufficientCreditsError ||
           error instanceof RateLimitError
