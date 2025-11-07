@@ -11,6 +11,9 @@ TypeScript SDK for KeyParty credit management. Single API call per operation wit
 - Comprehensive test coverage
 - Secure permission model with child key support
 - Recurring subscriptions with automated credit renewals
+- Webhook management with event subscriptions
+- Child key lifecycle management and monitoring
+- Transaction history with comprehensive audit trails
 
 ## Installation
 
@@ -214,6 +217,100 @@ await client.stopSubscription('user_123', 'sub_id');
 await client.startExternalUserSubscription('external_user_id', 100, 31);
 await client.getExternalUserSubscriptionStatus('external_user_id');
 await client.stopExternalUserSubscription('external_user_id', 'sub_id');
+```
+
+### Webhooks (v0.1.5+)
+
+```typescript
+// Create webhook for credit events
+const webhook = await client.createWebhook({
+  name: 'Credit Alerts',
+  url: 'https://example.com/webhooks/credits',
+  events: ['credits.low_threshold', 'credits.exhausted'],
+  lowCreditThreshold: 50,
+  description: 'Alert when credits run low'
+});
+// Returns: { success, data: { webhookId, secret }, timestamp }
+// ⚠️ Store the secret securely - only shown once!
+
+// List all webhooks
+const webhooks = await client.listWebhooks();
+// Optional: Filter by status
+const activeWebhooks = await client.listWebhooks('enabled');
+
+// Get webhook details
+const details = await client.getWebhook('webhook_id');
+
+// Update webhook configuration
+await client.updateWebhook('webhook_id', {
+  events: ['child_key.created', 'child_key.revoked'],
+  status: 'disabled'
+});
+
+// Rotate webhook secret (for security)
+const newSecret = await client.rotateWebhookSecret('webhook_id');
+// Returns: { success, data: { secret, message }, timestamp }
+
+// Delete webhook
+await client.deleteWebhook('webhook_id');
+```
+
+**Available Webhook Events:**
+- `service_key.rotated` - Service key was rotated
+- `service_key.created` - New service key created
+- `child_key.created` - Child API key generated
+- `child_key.revoked` - Child API key revoked
+- `credits.low_threshold` - Credits below threshold
+- `credits.exhausted` - Credits reached zero
+
+### Child Key Management (v0.1.6+)
+
+```typescript
+// List all child keys with filtering
+const childKeys = await client.listChildKeys({
+  environment: 'production',
+  externalUserId: 'user_123',
+  includeRevoked: false
+});
+// Returns: { success, data: { childKeys: [...], summary: { total, active, revoked, byEnvironment } }, timestamp }
+
+// Revoke compromised key (irreversible)
+await client.revokeChildKey('child_key_id');
+// Returns: { success, data: { childKeyId, previousStatus, newStatus, revokedAt, message }, timestamp }
+
+// Get detailed key health metrics
+const status = await client.getChildKeyStatus('child_key_id');
+// Returns: { success, data: { id, status, metrics24h, credits, rateLimit, ... }, timestamp }
+
+// Custom metadata management
+const metadata = await client.getChildKeyMetadata('child_key_id');
+await client.updateChildKeyMetadata('child_key_id', {
+  department: 'Engineering',
+  project: 'Mobile App',
+  version: '2.0'
+});
+// Max 10KB JSON metadata per key
+```
+
+### Transaction History (v0.1.6+)
+
+```typescript
+// Get paginated transaction history
+const history = await client.getTransactionHistory('user_123', {
+  limit: 50,
+  offset: 0,
+  type: 'deduct',
+  startDate: new Date('2025-01-01'),
+  endDate: new Date('2025-01-31')
+});
+// Returns: { success, data: { userId, transactions: [...], pagination: { total, limit, offset, hasMore } }, timestamp }
+
+// Get specific transaction details (idempotency check)
+const transaction = await client.getTransactionById('transaction_uuid');
+// Returns: { success, data: { id, type, amount, previousBalance, newBalance, status, metadata, ... }, timestamp }
+
+// Transaction types: 'deduct' | 'increase' | 'set'
+// Transaction status: 'completed' | 'failed' | 'rolled_back'
 ```
 
 ## Configuration

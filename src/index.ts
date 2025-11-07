@@ -20,6 +20,37 @@ export type {
   Subscription,
   SubscriptionResponse,
   SubscriptionStatusResponse,
+  // Webhook types
+  WebhookEventType,
+  WebhookRetryConfig,
+  WebhookStatus,
+  WebhookDeliveryStatus,
+  Webhook,
+  CreateWebhookInput,
+  CreateWebhookResponse,
+  UpdateWebhookInput,
+  WebhookOperationResponse,
+  ListWebhooksResponse,
+  GetWebhookResponse,
+  RotateWebhookSecretResponse,
+  // Child API Key Management types
+  ChildKeyEnvironment,
+  ChildKeyStatus,
+  ChildKey,
+  ListChildKeysOptions,
+  ListChildKeysResponse,
+  RevokeChildKeyResponse,
+  ChildKeyStatusResponse,
+  ChildKeyMetadataResponse,
+  // Transaction History types
+  TransactionType,
+  TransactionStatus,
+  TransactionPerformerType,
+  Transaction,
+  TransactionHistoryOptions,
+  TransactionHistoryResponse,
+  DetailedTransaction,
+  TransactionResponse,
 } from './types.js';
 
 // Export errors

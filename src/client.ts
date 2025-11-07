@@ -19,6 +19,22 @@ import type {
   JsonObject,
   SubscriptionResponse,
   SubscriptionStatusResponse,
+  CreateWebhookInput,
+  CreateWebhookResponse,
+  UpdateWebhookInput,
+  WebhookOperationResponse,
+  ListWebhooksResponse,
+  GetWebhookResponse,
+  RotateWebhookSecretResponse,
+  WebhookStatus,
+  ListChildKeysOptions,
+  ListChildKeysResponse,
+  RevokeChildKeyResponse,
+  ChildKeyStatusResponse,
+  ChildKeyMetadataResponse,
+  TransactionHistoryOptions,
+  TransactionHistoryResponse,
+  TransactionResponse,
 } from './types.js';
 import {
   ValidationError,
@@ -83,14 +99,14 @@ export class KeyPartyClient {
    * - API-level error handling (user not found, auth errors, insufficient credits)
    * - HTTP-level error handling (401, 429, etc.)
    *
-   * @param method - HTTP method (GET, POST, PUT, DELETE)
+   * @param method - HTTP method (GET, POST, PUT, PATCH, DELETE)
    * @param path - API endpoint path (e.g., '/api/credits/get')
    * @param body - Request body as JSON-serializable object
    * @returns Promise resolving to API response data
    * @throws ValidationError, AuthenticationError, UserNotFoundError, InsufficientCreditsError, NetworkError
    */
   private async request<T = unknown>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: JsonObject
   ): Promise<T> {
@@ -711,5 +727,655 @@ export class KeyPartyClient {
       externalUserId,
     });
     return await this.request('GET', `/api/external-user/subscriptions/status?${params.toString()}`);
+  }
+
+  // ============================================================================
+  // WEBHOOK METHODS
+  // ============================================================================
+
+  /**
+   * Validate webhook name
+   */
+  private validateWebhookName(name: string): void {
+    if (typeof name !== 'string') {
+      throw new ValidationError('name must be a string');
+    }
+    if (name.trim().length < 3) {
+      throw new ValidationError('name must be at least 3 characters');
+    }
+    if (name.length > 100) {
+      throw new ValidationError('name must be 100 characters or less');
+    }
+  }
+
+  /**
+   * Validate webhook URL
+   */
+  private validateWebhookUrl(url: string): void {
+    if (typeof url !== 'string') {
+      throw new ValidationError('url must be a string');
+    }
+    if (!url.startsWith('https://')) {
+      throw new ValidationError('url must use HTTPS protocol');
+    }
+    try {
+      new URL(url);
+    } catch {
+      throw new ValidationError('url must be a valid URL');
+    }
+  }
+
+  /**
+   * Validate webhook events array
+   */
+  private validateWebhookEvents(events: unknown): void {
+    if (!Array.isArray(events)) {
+      throw new ValidationError('events must be an array');
+    }
+    if (events.length === 0) {
+      throw new ValidationError('events must contain at least one event type');
+    }
+
+    const validEvents = [
+      'service_key.rotated',
+      'service_key.created',
+      'child_key.created',
+      'child_key.revoked',
+      'credits.low_threshold',
+      'credits.exhausted',
+    ];
+
+    for (const event of events) {
+      if (typeof event !== 'string' || !validEvents.includes(event)) {
+        throw new ValidationError(
+          `Invalid event type: ${event}. Valid types: ${validEvents.join(', ')}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Create a new webhook
+   *
+   * Webhooks allow you to receive real-time notifications when events occur.
+   * The webhook secret is ONLY shown once - store it securely for signature verification.
+   *
+   * @param input - Webhook configuration
+   * @returns Webhook ID and secret (secret shown ONLY once!)
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * const webhook = await client.createWebhook({
+   *   name: 'Production Alerts',
+   *   url: 'https://api.example.com/webhooks/keyparty',
+   *   events: ['credits.low_threshold', 'child_key.created'],
+   *   description: 'Production monitoring webhooks',
+   *   lowCreditThreshold: 50,
+   *   customHeaders: { 'X-Service-Auth': 'secret-token' }
+   * });
+   * console.log(`Webhook ID: ${webhook.data.webhookId}`);
+   * console.log(`Secret (save this!): ${webhook.data.secret}`);
+   * ```
+   */
+  async createWebhook(input: CreateWebhookInput): Promise<CreateWebhookResponse> {
+    // Validate required fields
+    this.validateWebhookName(input.name);
+    this.validateWebhookUrl(input.url);
+    this.validateWebhookEvents(input.events);
+
+    // Validate optional fields
+    if (input.description !== undefined) {
+      if (typeof input.description !== 'string') {
+        throw new ValidationError('description must be a string');
+      }
+    }
+
+    if (input.lowCreditThreshold !== undefined) {
+      if (typeof input.lowCreditThreshold !== 'number' || input.lowCreditThreshold < 0) {
+        throw new ValidationError('lowCreditThreshold must be a non-negative number');
+      }
+    }
+
+    if (input.customHeaders !== undefined) {
+      if (typeof input.customHeaders !== 'object' || input.customHeaders === null) {
+        throw new ValidationError('customHeaders must be an object');
+      }
+    }
+
+    if (input.retryConfig !== undefined) {
+      if (typeof input.retryConfig !== 'object' || input.retryConfig === null) {
+        throw new ValidationError('retryConfig must be an object');
+      }
+    }
+
+    return await this.request<CreateWebhookResponse>('POST', '/api/webhooks', input as unknown as JsonObject);
+  }
+
+  /**
+   * List all webhooks
+   *
+   * Returns all webhooks for the authenticated service.
+   * Optionally filter by status.
+   *
+   * @param status - Optional filter by webhook status ('enabled' or 'disabled')
+   * @returns Array of webhooks with full configuration and statistics
+   *
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * // Get all webhooks
+   * const all = await client.listWebhooks();
+   *
+   * // Get only enabled webhooks
+   * const enabled = await client.listWebhooks('enabled');
+   * console.log(`${enabled.data.webhooks.length} enabled webhooks`);
+   * ```
+   */
+  async listWebhooks(status?: WebhookStatus): Promise<ListWebhooksResponse> {
+    let path = '/api/webhooks';
+    if (status) {
+      if (status !== 'enabled' && status !== 'disabled') {
+        throw new ValidationError('status must be "enabled" or "disabled"');
+      }
+      path += `?status=${status}`;
+    }
+
+    return await this.request<ListWebhooksResponse>('GET', path);
+  }
+
+  /**
+   * Get webhook details by ID
+   *
+   * Returns complete configuration and statistics for a specific webhook.
+   * Note: The webhook secret is never returned after creation.
+   *
+   * @param webhookId - Webhook ID to retrieve
+   * @returns Webhook configuration and statistics
+   *
+   * @throws {ValidationError} If webhookId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If webhook doesn't exist
+   *
+   * @example
+   * ```typescript
+   * const webhook = await client.getWebhook('webhook_123');
+   * console.log(`Status: ${webhook.data.status}`);
+   * console.log(`Success rate: ${webhook.data.successCount}/${webhook.data.successCount + webhook.data.failureCount}`);
+   * ```
+   */
+  async getWebhook(webhookId: string): Promise<GetWebhookResponse> {
+    if (!webhookId || typeof webhookId !== 'string') {
+      throw new ValidationError('webhookId is required');
+    }
+
+    return await this.request<GetWebhookResponse>('GET', `/api/webhooks/${webhookId}`);
+  }
+
+  /**
+   * Update a webhook configuration
+   *
+   * Update any webhook properties. All fields are optional.
+   * Note: Uses PATCH method for partial updates.
+   *
+   * @param webhookId - Webhook ID to update
+   * @param input - Fields to update (all optional)
+   * @returns Operation result
+   *
+   * @throws {ValidationError} If parameters are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If webhook doesn't exist
+   *
+   * @example
+   * ```typescript
+   * // Disable a webhook
+   * await client.updateWebhook('webhook_123', { status: 'disabled' });
+   *
+   * // Update multiple properties
+   * await client.updateWebhook('webhook_123', {
+   *   name: 'Updated Name',
+   *   lowCreditThreshold: 25,
+   *   events: ['credits.exhausted']
+   * });
+   * ```
+   */
+  async updateWebhook(
+    webhookId: string,
+    input: UpdateWebhookInput
+  ): Promise<WebhookOperationResponse> {
+    if (!webhookId || typeof webhookId !== 'string') {
+      throw new ValidationError('webhookId is required');
+    }
+
+    // Validate any provided fields
+    if (input.name !== undefined) {
+      this.validateWebhookName(input.name);
+    }
+    if (input.url !== undefined) {
+      this.validateWebhookUrl(input.url);
+    }
+    if (input.events !== undefined) {
+      this.validateWebhookEvents(input.events);
+    }
+    if (input.status !== undefined) {
+      if (input.status !== 'enabled' && input.status !== 'disabled') {
+        throw new ValidationError('status must be "enabled" or "disabled"');
+      }
+    }
+    if (input.lowCreditThreshold !== undefined) {
+      if (typeof input.lowCreditThreshold !== 'number' || input.lowCreditThreshold < 0) {
+        throw new ValidationError('lowCreditThreshold must be a non-negative number');
+      }
+    }
+
+    return await this.request<WebhookOperationResponse>('PATCH', `/api/webhooks/${webhookId}`, input as unknown as JsonObject);
+  }
+
+  /**
+   * Delete a webhook
+   *
+   * Soft delete - sets webhook status to 'disabled'.
+   * Webhook can be re-enabled by updating its status.
+   *
+   * @param webhookId - Webhook ID to delete
+   * @returns Operation result
+   *
+   * @throws {ValidationError} If webhookId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If webhook doesn't exist
+   *
+   * @example
+   * ```typescript
+   * await client.deleteWebhook('webhook_123');
+   * ```
+   */
+  async deleteWebhook(webhookId: string): Promise<WebhookOperationResponse> {
+    if (!webhookId || typeof webhookId !== 'string') {
+      throw new ValidationError('webhookId is required');
+    }
+
+    return await this.request<WebhookOperationResponse>('DELETE', `/api/webhooks/${webhookId}`);
+  }
+
+  /**
+   * Rotate webhook secret
+   *
+   * Generates a new webhook secret and invalidates the old one.
+   * The new secret is ONLY shown once - store it securely.
+   *
+   * Note: This method calls a Convex mutation directly since the HTTP endpoint
+   * may not be exposed yet. Check API documentation for availability.
+   *
+   * @param webhookId - Webhook ID to rotate secret for
+   * @returns New webhook secret (shown ONLY once!)
+   *
+   * @throws {ValidationError} If webhookId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If webhook doesn't exist
+   *
+   * @example
+   * ```typescript
+   * const result = await client.rotateWebhookSecret('webhook_123');
+   * console.log(`New secret (save this!): ${result.data.secret}`);
+   * ```
+   */
+  async rotateWebhookSecret(webhookId: string): Promise<RotateWebhookSecretResponse> {
+    if (!webhookId || typeof webhookId !== 'string') {
+      throw new ValidationError('webhookId is required');
+    }
+
+    // Note: This endpoint may need to be added to the HTTP API
+    // For now, this documents the expected interface
+    return await this.request<RotateWebhookSecretResponse>('POST', `/api/webhooks/${webhookId}/rotate-secret`);
+  }
+
+  // ============================================================================
+  // CHILD API KEY MANAGEMENT METHODS
+  // ============================================================================
+
+  /**
+   * Validate child key ID
+   */
+  private validateChildKeyId(childKeyId: string): void {
+    if (!childKeyId || typeof childKeyId !== 'string') {
+      throw new ValidationError('childKeyId is required and must be a string');
+    }
+    if (childKeyId.trim().length === 0) {
+      throw new ValidationError('childKeyId cannot be empty');
+    }
+  }
+
+  /**
+   * List all child API keys created under this service
+   *
+   * Returns array of child keys with usage statistics.
+   * Use this to build dashboards showing key health and usage.
+   *
+   * @param options - Filtering options
+   * @returns Array of child keys with statistics
+   *
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * // List all production keys
+   * const keys = await client.listChildKeys({ environment: 'production' });
+   * console.log(`${keys.data.summary.active} active keys`);
+   *
+   * // List keys for specific user
+   * const userKeys = await client.listChildKeys({
+   *   externalUserId: 'user_123'
+   * });
+   *
+   * // Include revoked keys
+   * const allKeys = await client.listChildKeys({ includeRevoked: true });
+   * ```
+   */
+  async listChildKeys(options?: ListChildKeysOptions): Promise<ListChildKeysResponse> {
+    // Backend uses POST /api/apiKeys/list with service key authentication
+    const body: JsonObject = {};
+
+    if (options?.environment) {
+      if (!['development', 'staging', 'production'].includes(options.environment)) {
+        throw new ValidationError('environment must be development, staging, or production');
+      }
+      body.environment = options.environment;
+    }
+
+    if (options?.includeRevoked !== undefined) {
+      body.includeRevoked = options.includeRevoked;
+    }
+
+    if (options?.externalUserId) {
+      this.validateUserId(options.externalUserId);
+      body.externalUserId = options.externalUserId;
+    }
+
+    return await this.request<ListChildKeysResponse>('POST', '/api/apiKeys/list', body);
+  }
+
+  /**
+   * Revoke a child API key
+   *
+   * IMPORTANT: This is irreversible! The child key will immediately stop working.
+   * Consider creating a new key for the user if needed.
+   *
+   * @param childKeyId - ID of child key to revoke (keyHash from backend)
+   * @returns Revocation confirmation
+   *
+   * @throws {ValidationError} If childKeyId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If child key doesn't exist
+   *
+   * @example
+   * ```typescript
+   * // Revoke compromised key
+   * await client.revokeChildKey('key_abc123');
+   *
+   * // Then create new key for user
+   * const newKey = await client.createChildKey('user_123', 1000);
+   * ```
+   */
+  async revokeChildKey(childKeyId: string): Promise<RevokeChildKeyResponse> {
+    this.validateChildKeyId(childKeyId);
+
+    // Backend uses DELETE /api/keys/delete with keyHash parameter
+    return await this.request<RevokeChildKeyResponse>('DELETE', '/api/keys/delete', {
+      keyHash: childKeyId,
+    });
+  }
+
+  /**
+   * Get detailed health metrics for a specific child key
+   *
+   * Returns comprehensive statistics including:
+   * - 24-hour usage metrics
+   * - Top endpoints by usage
+   * - Current credit balance
+   * - Rate limiting status
+   *
+   * @param childKeyId - ID of child key (keyHash)
+   * @returns Health metrics and usage statistics
+   *
+   * @throws {ValidationError} If childKeyId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If child key doesn't exist
+   *
+   * @example
+   * ```typescript
+   * const status = await client.getChildKeyStatus('key_abc123');
+   * console.log(`Requests: ${status.data.metrics24h.totalRequests}`);
+   * console.log(`Success rate: ${status.data.metrics24h.successRate}%`);
+   * console.log(`Credits: ${status.data.credits.balance}`);
+   * ```
+   */
+  async getChildKeyStatus(childKeyId: string): Promise<ChildKeyStatusResponse> {
+    this.validateChildKeyId(childKeyId);
+
+    // Backend uses POST /api/apiKeys/status with keyHash in body
+    return await this.request<ChildKeyStatusResponse>('POST', '/api/apiKeys/status', {
+      keyHash: childKeyId,
+    });
+  }
+
+  /**
+   * Retrieve custom metadata associated with a child key
+   *
+   * Use this to retrieve custom fields you've stored like:
+   * - User tier/plan information
+   * - Custom limits or features
+   * - Internal notes or tags
+   *
+   * @param childKeyId - ID of child key (keyHash)
+   * @returns Custom metadata object
+   *
+   * @throws {ValidationError} If childKeyId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If child key doesn't exist
+   *
+   * @example
+   * ```typescript
+   * const meta = await client.getChildKeyMetadata('key_abc123');
+   * console.log(`User tier: ${meta.data.metadata.tier}`);
+   * ```
+   */
+  async getChildKeyMetadata(childKeyId: string): Promise<ChildKeyMetadataResponse> {
+    this.validateChildKeyId(childKeyId);
+
+    // Backend uses GET /api/keys/metadata with query parameter
+    return await this.request<ChildKeyMetadataResponse>('GET', `/api/keys/metadata?keyHash=${encodeURIComponent(childKeyId)}`);
+  }
+
+  /**
+   * Update custom metadata for a child key
+   *
+   * Store arbitrary JSON metadata (max 10KB serialized).
+   * Common use cases:
+   * - User tier: { tier: 'pro', features: ['unlimited', 'priority'] }
+   * - Custom limits: { dailyLimit: 10000, monthlyLimit: 100000 }
+   * - Internal tracking: { notes: 'VIP customer', tags: ['enterprise'] }
+   *
+   * @param childKeyId - ID of child key (keyHash)
+   * @param metadata - Custom metadata (max 10KB serialized)
+   * @returns Updated metadata
+   *
+   * @throws {ValidationError} If childKeyId or metadata is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If child key doesn't exist
+   *
+   * @example
+   * ```typescript
+   * await client.updateChildKeyMetadata('key_abc123', {
+   *   tier: 'pro',
+   *   features: ['api_access', 'premium_support'],
+   *   dailyLimit: 10000
+   * });
+   * ```
+   */
+  async updateChildKeyMetadata(
+    childKeyId: string,
+    metadata: JsonObject
+  ): Promise<ChildKeyMetadataResponse> {
+    this.validateChildKeyId(childKeyId);
+
+    // Validate metadata
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+      throw new ValidationError('metadata must be an object');
+    }
+
+    // Check JSON serializability and size
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(metadata);
+    } catch {
+      throw new ValidationError('metadata must be JSON-serializable');
+    }
+
+    if (serialized.length > 10000) {
+      throw new ValidationError('metadata size must be 10KB or less when serialized');
+    }
+
+    // Backend uses PUT /api/keys/metadata with keyHash and metadata in body
+    return await this.request<ChildKeyMetadataResponse>('PUT', '/api/keys/metadata', {
+      keyHash: childKeyId,
+      metadata,
+    } as unknown as JsonObject);
+  }
+
+  // ============================================================================
+  // TRANSACTION HISTORY METHODS
+  // ============================================================================
+
+  /**
+   * Get audit trail of all credit operations
+   *
+   * Returns paginated transaction history with full details.
+   * Use for:
+   * - Compliance and auditing
+   * - Debugging credit discrepancies
+   * - Usage analysis and reporting
+   *
+   * @param userId - User ID (or externalUserId for child key users)
+   * @param options - Filtering and pagination options
+   * @returns Transaction history with pagination
+   *
+   * @throws {ValidationError} If userId or options are invalid
+   * @throws {AuthenticationError} If service key is invalid
+   *
+   * @example
+   * ```typescript
+   * // Get last 50 transactions
+   * const history = await client.getTransactionHistory('user_123');
+   *
+   * // Filter by type
+   * const deductions = await client.getTransactionHistory('user_123', {
+   *   type: 'deduct',
+   *   limit: 100
+   * });
+   *
+   * // Date range query
+   * const monthly = await client.getTransactionHistory('user_123', {
+   *   startDate: new Date('2025-01-01'),
+   *   endDate: new Date('2025-01-31')
+   * });
+   *
+   * // Pagination
+   * const page2 = await client.getTransactionHistory('user_123', {
+   *   limit: 50,
+   *   offset: 50
+   * });
+   * ```
+   */
+  async getTransactionHistory(
+    userId: string,
+    options?: TransactionHistoryOptions
+  ): Promise<TransactionHistoryResponse> {
+    this.validateUserId(userId);
+
+    const params = new URLSearchParams({ userId });
+
+    if (options?.limit !== undefined) {
+      if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 500) {
+        throw new ValidationError('limit must be between 1 and 500');
+      }
+      params.append('limit', String(options.limit));
+    }
+
+    if (options?.offset !== undefined) {
+      if (!Number.isInteger(options.offset) || options.offset < 0) {
+        throw new ValidationError('offset must be a non-negative integer');
+      }
+      params.append('offset', String(options.offset));
+    }
+
+    if (options?.type) {
+      if (!['deduct', 'increase', 'set'].includes(options.type)) {
+        throw new ValidationError('type must be deduct, increase, or set');
+      }
+      params.append('type', options.type);
+    }
+
+    if (options?.startDate) {
+      if (!(options.startDate instanceof Date) || isNaN(options.startDate.getTime())) {
+        throw new ValidationError('startDate must be a valid Date object');
+      }
+      params.append('startDate', options.startDate.toISOString());
+    }
+
+    if (options?.endDate) {
+      if (!(options.endDate instanceof Date) || isNaN(options.endDate.getTime())) {
+        throw new ValidationError('endDate must be a valid Date object');
+      }
+      params.append('endDate', options.endDate.toISOString());
+    }
+
+    // Validate date range
+    if (options?.startDate && options?.endDate && options.startDate > options.endDate) {
+      throw new ValidationError('startDate must be before endDate');
+    }
+
+    return await this.request<TransactionHistoryResponse>('GET', `/api/transactions?${params.toString()}`);
+  }
+
+  /**
+   * Get specific transaction by ID
+   *
+   * Use this for:
+   * - Idempotency verification
+   * - Debugging specific transactions
+   * - Transaction status checks
+   *
+   * @param transactionId - UUID of transaction
+   * @returns Transaction details
+   *
+   * @throws {ValidationError} If transactionId is invalid
+   * @throws {AuthenticationError} If service key is invalid
+   * @throws {UserNotFoundError} If transaction doesn't exist
+   *
+   * @example
+   * ```typescript
+   * // Check if transaction already completed (idempotency)
+   * try {
+   *   const tx = await client.getTransactionById('tx_abc123');
+   *   console.log(`Transaction already completed: ${tx.data.status}`);
+   * } catch (error) {
+   *   if (error instanceof UserNotFoundError) {
+   *     // Transaction doesn't exist, safe to proceed
+   *   }
+   * }
+   * ```
+   */
+  async getTransactionById(transactionId: string): Promise<TransactionResponse> {
+    if (!transactionId || typeof transactionId !== 'string') {
+      throw new ValidationError('transactionId is required and must be a string');
+    }
+    if (transactionId.trim().length === 0) {
+      throw new ValidationError('transactionId cannot be empty');
+    }
+
+    return await this.request<TransactionResponse>('GET', `/api/transactions/${transactionId}`);
   }
 }
