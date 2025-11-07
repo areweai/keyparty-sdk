@@ -50,7 +50,7 @@ import {
  * Default configuration values
  */
 const DEFAULT_CONFIG: Required<Omit<KeyPartyConfig, 'rateLimit'>> & { rateLimit?: KeyPartyConfig['rateLimit'] } = {
-  baseUrl: 'https://ideal-grouse-601.convex.site',
+  baseUrl: 'https://energized-tiger-672.convex.site',
   timeout: 10000,
   retryAttempts: 3,
   retryDelay: 1000,
