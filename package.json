@@ -1,6 +1,6 @@
 {
   "name": "keyparty-sdk",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "description": "Node.js TypeScript SDK for KeyParty credit management with webhooks, child key management, and transaction history (Phase 1 endpoints verified working)",
   "main": "./dist/index.js",
